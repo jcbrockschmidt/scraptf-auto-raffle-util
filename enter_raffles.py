@@ -198,7 +198,8 @@ def try_enter_all_raffles(br):
     Returns:
         Number of raffles successfully entered.
     """
-    entered_cnt = 0
+    new_entered_cnt = 0
+    total_entered_cnt = 0
 
     try:
         # Fetch page containing open raffles.
@@ -213,19 +214,25 @@ def try_enter_all_raffles(br):
         # Get all active raffles.
         raffles = get_all_raffles(br, csrf)
 
-        # Parse all raffles not yet entered.
-        # We parse the available raffles in reverse as to enter the oldest raffles first.
+        # Create list of unentered raffles.
+        unentered = []
         for raffle_id, entered in reversed(raffles):
-            # Ignore entered raffles.
             if entered:
-                continue
+                total_entered_cnt += 1
+            else:
+                unentered.append(raffle_id)
 
+        # Parse all unentered raffles.
+        # We parse the available raffles in reverse as to enter the oldest raffles first.
+        for raffle_id in reversed(unentered):
             # Attempt to enter the raffle.
             if try_enter_raffle(br, raffle_id):
-                entered_cnt += 1
+                new_entered_cnt += 1
+                total_entered_cnt += 1
             else:
                 print('Failed to enter raffle {}'.format(raffle_id))
                 break
+            print('{}/{} raffles entered'.format(total_entered_cnt, len(raffles)))
 
             print('Waiting...')
             sleep(DELAY)
@@ -235,7 +242,7 @@ def try_enter_all_raffles(br):
         print()
         print('Interrupt detected, halting script...')
 
-    return entered_cnt
+    return new_entered_cnt
 
 def main():
     # Configure browser
