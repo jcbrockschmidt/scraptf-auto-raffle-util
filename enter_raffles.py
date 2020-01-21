@@ -13,6 +13,8 @@ USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Ge
 # Delay between raffle entries in seconds.
 DELAY = 5
 
+MAIN_RAFFLE_URL = 'https://scrap.tf/raffles'
+
 def get_csrf_hash(resp):
     """
     Gets the CSRF hash for the given page.
@@ -163,6 +165,28 @@ def get_all_raffles(br, csrf):
         lastid = raffles[-1][0]
     return raffles
 
+def get_num_raffles(br):
+    """
+    Get the number of raffles entered and the total number of raffles.
+
+    Args:
+        br: http.cookiejar.Browser to open raffle web page with.
+
+    Returns:
+        Number of raffles entered and the total number of raffles.
+        False on failure.
+    """
+    resp = br.open(MAIN_RAFFLE_URL)
+    soup = bs4.BeautifulSoup(resp.get_data(), 'html.parser')
+    stat = soup.find('div', {'class': 'raffle-list-stat'})
+    if stat is None:
+        return False
+    h1 = stat.find('h1')
+    if h1 is None:
+        return False
+    entered, total = h1.text.split('/')
+    return int(entered), int(total)
+
 def try_enter_all_raffles(br):
     """
     Enters unentered raffles until a bad response is encountered.
@@ -178,7 +202,7 @@ def try_enter_all_raffles(br):
 
     try:
         # Fetch page containing open raffles.
-        resp = br.open('https://scrap.tf/raffles')
+        resp = br.open(MAIN_RAFFLE_URL)
 
         # Get CSRF hash.
         csrf = get_csrf_hash(resp)
@@ -235,6 +259,16 @@ def main():
     print()
     print('Done')
     print('{} new raffles entered'.format(entered_cnt))
+
+    try:
+        num_resp = get_num_raffles(br)
+        if num_resp is None:
+            print('Could not load raffle stats')
+        else:
+            entered, total = num_resp
+            print('{}/{} raffles entered'.format(entered, total))
+    except KeyboardInterrupt:
+        print('Canceled fetching of raffle stats')
 
     # Save cookies.
     cj.save('cookies.txt', ignore_discard=True, ignore_expires=True)
