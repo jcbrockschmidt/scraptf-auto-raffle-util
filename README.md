@@ -2,6 +2,13 @@
 
 Utility for automatically entering public raffles on [Scrap.TF](https://scrap.tf/raffles).
 
+## Requirements
+
+ * Python 3.6 or higher
+ * `mechanize` version 0.4.5 or higher
+
 ## Usage
 
-To connect your account, you must fill `cookies.txt` with a cookie provided by Scrap.TF after you login. This cookie must be in the LWP Perl format. If you are on Chrome, you may find the [EditThisCookie](http://www.editthiscookie.com/) plugin useful to this end.
+ 1. Login to Scrap.TF.
+ 2. Copy the cookie provided by Scrap.TF into `cookies.txt` in the LWP Perl format. If you are on Chrome, you may find the [EditThisCookie](http://www.editthiscookie.com/) plugin useful to this end.
+ 3. Run `./enter_raffles.py` in terminal.
