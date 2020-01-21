@@ -22,7 +22,7 @@ def try_enter_raffle(br, raffle_id):
         raffle_id: The raffle ID (case-insensitive)
 
     Returns:
-        
+        True on success, False otherwise.
     """
     FORM_URL = 'https://scrap.tf/ajax/viewraffle/EnterRaffle'
     raffle_id = raffle_id.upper()
