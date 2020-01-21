@@ -7,8 +7,14 @@ import mechanize
 import os
 from time import sleep
 
+# File to load and save cookies from.
 COOKIES_PATH = 'cookies.txt'
-USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/79.0.3945.79 Chrome/79.0.3945.79 Safari/537.36'
+
+# File to look for user agent in.
+USER_AGENT_PATH = 'user-agent.txt'
+
+# Default user agent to use when none is provided.
+DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
 
 # Delay between raffle entries in seconds.
 DELAY = 5
@@ -224,7 +230,7 @@ def try_enter_all_raffles(br):
 
         # Parse all unentered raffles.
         # We parse the available raffles in reverse as to enter the oldest raffles first.
-        for raffle_id in reversed(unentered):
+        for i, raffle_id in enumerate(reversed(unentered)):
             # Attempt to enter the raffle.
             if try_enter_raffle(br, raffle_id):
                 new_entered_cnt += 1
@@ -234,8 +240,9 @@ def try_enter_all_raffles(br):
                 break
             print('{}/{} raffles entered'.format(total_entered_cnt, len(raffles)))
 
-            print('Waiting...')
-            sleep(DELAY)
+            if i < len(unentered) - 1:
+                print('Waiting...')
+                sleep(DELAY)
             print()
 
     except KeyboardInterrupt:
@@ -260,12 +267,21 @@ def main():
         cj.load(COOKIES_PATH, ignore_discard=True, ignore_expires=True)
     br.set_cookiejar(cj)
 
-    br.addheaders = [('User-agent', USER_AGENT)]
+    # Load user agent from file.
+    if os.path.exists(USER_AGENT_PATH):
+        with open(USER_AGENT_PATH, 'r') as f:
+            user_agent = f.readline().strip()
+        print('Loaded user agent from file')
+    else:
+        user_agent = DEFAULT_USER_AGENT
+        print('Using default user agent')
+    br.addheaders = [('User-agent', user_agent)]
+    print('User agent: {}'.format(user_agent))
+    print()
 
     entered_cnt = try_enter_all_raffles(br)
-    print()
     print('Done')
-    print('{} new raffles entered'.format(entered_cnt))
+    print('{} raffles newly entered'.format(entered_cnt))
 
     try:
         num_resp = get_num_raffles(br)
