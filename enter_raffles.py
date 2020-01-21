@@ -13,6 +13,29 @@ USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Ge
 # Delay between raffle entries in seconds.
 DELAY = 5
 
+def get_csrf_hash(resp):
+    """
+    Gets the CSRF hash for the given page.
+
+    Args:
+        A mechanize.Response response representing the returned page.
+
+    Returns:
+        The CSRF token if it is found, and None otherwise.
+    """
+    soup = bs4.BeautifulSoup(resp.get_data(), 'html.parser')
+    csrf = None
+    for script in soup.find_all('script'):
+        content = script.text
+        # Check if code sets our CSRF hash.
+        pos = content.find('ScrapTF.User.Hash')
+        if pos == -1:
+            continue
+        begin = content.find('=', pos) + 1
+        end = content.find('\n', begin) - 1
+        csrf = content[begin:end].replace('"', '').strip()
+    return csrf
+
 def try_enter_raffle(br, raffle_id):
     """
     Attempts to enter a raffle.
@@ -31,25 +54,15 @@ def try_enter_raffle(br, raffle_id):
 
     url = 'https://scrap.tf/raffles/{}'.format(raffle_id)
     resp = br.open(url)
-    soup = bs4.BeautifulSoup(resp.get_data(), 'html.parser')
 
     # Get CSRF hash.
-    csrf = None
-    for script in soup.find_all('script'):
-        content = script.text
-        # Check if code sets our CSRF hash.
-        pos = content.find('ScrapTF.User.Hash')
-        if pos == -1:
-            continue
-        begin = content.find('=', pos) + 1
-        end = content.find('\n', begin) - 1
-        csrf = content[begin:end].replace('"', '').strip()
+    csrf = get_csrf_hash(resp)
     if csrf is None:
         print('Failed to find CSRF token')
         return False
 
     # Get hash from "Enter Raffle" button.
-    hash = None
+    soup = bs4.BeautifulSoup(resp.get_data(), 'html.parser')
     button = soup.find('button', {'id': 'raffle-enter'})
     onclick = button.get('onclick')
     begin = onclick.find('(') + 1
@@ -76,6 +89,80 @@ def try_enter_raffle(br, raffle_id):
     else:
         return False
 
+def get_raffle_batch(br, csrf, raffle_id=''):
+    """
+    Gets a batch of open raffles whose start date precedes a given raffle.
+
+    Args:
+        br: http.cookiejar.Browser to call requests from.
+        csrf: CSRF hash of main raffle page.
+        raffle_id: ID of raffle to get raffles after (exclusive).
+
+    Returns:
+        List of tuples (`new_raffle_id`, `entered`) where `entered` is a boolean
+        of whether the associated raffle has already been entered. This list is
+        followed by a boolean of whether there are more raffles preceding the
+        last raffle ID. Tuples are in chronological order from newest to oldest.
+
+        False is returned on failure.
+    """
+    PAGINATE_URL = 'https://scrap.tf/ajax/raffles/Paginate'
+
+    # Call the Paginate AJAX query on Scrap.tf.
+    post_data = {
+        'start': raffle_id,
+        'sort': 0,
+        'puzzle': 0,
+        'csrf': csrf
+    }
+    req = mechanize.Request(PAGINATE_URL, data=post_data)
+    resp = br.open(req)
+
+    # Interpret JSON response.
+    json_resp = json.loads(resp.get_data())
+    success = json_resp['success']
+    if not success:
+        return False
+
+    # Parse HTML to obtain raffle IDs.
+    raffles = []
+    soup = bs4.BeautifulSoup(json_resp['html'], 'html.parser')
+    for raffle in soup.find_all('div', {'class': 'panel-raffle'}):
+        # Ignore raffles which have already been entered.
+        entered = 'raffle-entered' in raffle.get('class')
+        raffle_id = raffle.get('id').split('-')[-1]
+        raffles.append((raffle_id, entered))
+
+    return raffles, json_resp['done']
+
+def get_all_raffles(br, csrf):
+    """
+    Gets all public raffles
+
+    Args:
+        br: http.cookiejar.Browser to call requests from.
+        csrf: CSRF hash of main raffle page.
+
+    Returns:
+        List of tuples (`new_raffle_id`, `entered`) where `entered` is a boolean
+        of whether the associated raffle has already been entered. Tuples are
+        in chronological order from newest to oldest.
+
+        False is returned on failure.
+    """
+    lastid = ''
+    raffles = []
+    done = False
+    while not done:
+        resp = get_raffle_batch(br, csrf, lastid)
+        if not resp:
+            return False
+
+        batch, done = resp
+        raffles += batch
+        lastid = raffles[-1][0]
+    return raffles
+
 def try_enter_all_raffles(br):
     """
     Enters unentered raffles until a bad response is encountered.
@@ -93,14 +180,23 @@ def try_enter_all_raffles(br):
         # Fetch page containing open raffles.
         resp = br.open('https://scrap.tf/raffles')
 
-        # Parse all open raffles not yet entered.
+        # Get CSRF hash.
+        csrf = get_csrf_hash(resp)
+        if csrf is None:
+            print('Failed to find CSRF token on main page')
+            return False
+
+        # Get all active raffles.
+        raffles = get_all_raffles(br, csrf)
+
+        # Parse all raffles not yet entered.
         # We parse the available raffles in reverse as to enter the oldest raffles first.
-        soup = bs4.BeautifulSoup(resp.get_data(), 'html.parser')
-        for raffle in reversed(soup.find_all('div', {'class': 'panel-raffle'})):
-            # Ignore raffles which have already been entered.
-            if 'raffle-entered' in raffle.get('class'):
+        for raffle_id, entered in reversed(raffles):
+            # Ignore entered raffles.
+            if entered:
                 continue
-            raffle_id = raffle.get('id').split('-')[-1]
+
+            # Attempt to enter the raffle.
             if try_enter_raffle(br, raffle_id):
                 entered_cnt += 1
             else:
